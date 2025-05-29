@@ -1,0 +1,45 @@
+[
+    {
+        "id": "opencti_ioc_analysis",
+        "user_id": "ba92d412-d296-4748-8b63-df6752c34e1b",
+        "name": "OpenCTI IOC Analysis",
+        "content": "import requests\nfrom pydantic import Field\n\n\"\"\"\ntitle: OpenCTI IOC Analysis\nauthor: ReaverVision\nauthor_url: https://github.com/tiancu1980/OpenWebUI-Tools\nfunding_url: https://github.com/open-webui\nversion: 0.0.1\n\"\"\"\n\n\nclass Tools:\n    def __init__(self):\n        self.opencti_api_url = \"https://YOUR_OPENCTI/graphql\"\n        self.opencti_token = \"YOUR_API_TOKEN_HERE\"\n        self.opencti_headers = {\n            \"Content-Type\": \"application/json\",\n            \"Authorization\": f\"Bearer {self.opencti_token}\",\n        }\n\n    def analyze_ip(\n        self, ip: str = Field(..., description=\"IPv4 address to be analyzed\")\n    ) -> dict:\n        \"\"\"\n        Analyzes an IPv4 address using OpenCTI GraphQL API.\n        :param ip: IPv4 address to analyze\n        :return: Dict with observable details or error message\n        \"\"\"\n        query = \"\"\"\n        query SearchIOC($value: Any!) {\n          stixCyberObservables(\n            filters: {\n              mode: and,\n              filters: [\n                { key: \"value\", values: [$value], operator: eq, mode: or },\n                { key: \"entity_type\", values: [\"IPv4-Addr\"], operator: eq, mode: or }\n              ],\n              filterGroups: []\n            }\n          ) {\n            edges {\n              node {\n                id\n                entity_type\n                observable_value\n                created_at\n                updated_at\n                x_opencti_score\n                x_opencti_description\n                createdBy { name }\n                objectMarking { definition }\n                objectLabel { value color }\n              }\n            }\n          }\n        }\n        \"\"\"\n        payload = {\"query\": query, \"variables\": {\"value\": ip}}\n\n        try:\n            response = requests.post(\n                self.opencti_api_url, json=payload, headers=self.opencti_headers\n            )\n            response.raise_for_status()\n            data = response.json()\n            edges = (\n                data.get(\"data\", {}).get(\"stixCyberObservables\", {}).get(\"edges\", [])\n            )\n\n            if not edges:\n                return {\"result\": f\"No observables found for IP {ip}\"}\n\n            node = edges[0][\"node\"]\n            markings = [m.get(\"definition\") for m in node.get(\"objectMarking\", [])]\n            labels = [\n                {\"value\": l.get(\"value\"), \"color\": l.get(\"color\")}\n                for l in node.get(\"objectLabel\", [])\n            ]\n\n            return {\n                \"id\": node.get(\"id\"),\n                \"entity_type\": node.get(\"entity_type\"),\n                \"observable_value\": node.get(\"observable_value\"),\n                \"created_at\": node.get(\"created_at\"),\n                \"updated_at\": node.get(\"updated_at\"),\n                \"score\": node.get(\"x_opencti_score\"),\n                \"description\": node.get(\"x_opencti_description\") or \"N/A\",\n                \"created_by\": node.get(\"createdBy\", {}).get(\"name\", \"Unknown\"),\n                \"markings\": markings,\n                \"labels\": labels,\n            }\n\n        except requests.exceptions.RequestException as e:\n            return {\"error\": f\"OpenCTI request failed: {e}\"}\n\n    def analyze_domain(\n        self, domain: str = Field(..., description=\"Domain name to be analyzed\")\n    ) -> dict:\n        \"\"\"\n        Analyzes a domain name using OpenCTI GraphQL API.\n        :param domain: Domain name to analyze\n        :return: Dict with observable details or error message\n        \"\"\"\n        query = \"\"\"\n        query SearchIOC($value: Any!) {\n          stixCyberObservables(\n            filters: {\n              mode: and,\n              filters: [\n                { key: \"value\", values: [$value], operator: eq, mode: or },\n                { key: \"entity_type\", values: [\"Domain-Name\"], operator: eq, mode: or }\n              ],\n              filterGroups: []\n            }\n          ) {\n            edges {\n              node {\n                id\n                entity_type\n                observable_value\n                created_at\n                updated_at\n                x_opencti_score\n                x_opencti_description\n                createdBy { name }\n                objectMarking { definition }\n                objectLabel { value color }\n              }\n            }\n          }\n        }\n        \"\"\"\n        payload = {\"query\": query, \"variables\": {\"value\": domain}}\n\n        try:\n            response = requests.post(\n                self.opencti_api_url, json=payload, headers=self.opencti_headers\n            )\n            response.raise_for_status()\n            data = response.json()\n            edges = (\n                data.get(\"data\", {}).get(\"stixCyberObservables\", {}).get(\"edges\", [])\n            )\n\n            if not edges:\n                return {\"result\": f\"No observables found for domain {domain}\"}\n\n            node = edges[0][\"node\"]\n            markings = [m.get(\"definition\") for m in node.get(\"objectMarking\", [])]\n            labels = [\n                {\"value\": l.get(\"value\"), \"color\": l.get(\"color\")}\n                for l in node.get(\"objectLabel\", [])\n            ]\n\n            return {\n                \"id\": node.get(\"id\"),\n                \"entity_type\": node.get(\"entity_type\"),\n                \"observable_value\": node.get(\"observable_value\"),\n                \"created_at\": node.get(\"created_at\"),\n                \"updated_at\": node.get(\"updated_at\"),\n                \"score\": node.get(\"x_opencti_score\"),\n                \"description\": node.get(\"x_opencti_description\") or \"N/A\",\n                \"created_by\": node.get(\"createdBy\", {}).get(\"name\", \"Unknown\"),\n                \"markings\": markings,\n                \"labels\": labels,\n            }\n\n        except requests.exceptions.RequestException as e:\n            return {\"error\": f\"OpenCTI request failed: {e}\"}\n",
+        "specs": [
+            {
+                "name": "analyze_domain",
+                "description": "Analyzes a domain name using OpenCTI GraphQL API.",
+                "parameters": {
+                    "properties": {
+                        "domain": {
+                            "description": "Domain name to analyze",
+                            "type": "string"
+                        }
+                    },
+                    "type": "object"
+                }
+            },
+            {
+                "name": "analyze_ip",
+                "description": "Analyzes an IPv4 address using OpenCTI GraphQL API.",
+                "parameters": {
+                    "properties": {
+                        "ip": {
+                            "description": "IPv4 address to analyze",
+                            "type": "string"
+                        }
+                    },
+                    "type": "object"
+                }
+            }
+        ],
+        "meta": {
+            "description": "The OpenCTI IOC Analysis Tool is designed to search for Indicators of Compromise (IOCs) such as IPv4 addresses and domain names within the OpenCTI platform. This tool leverages the powerful capabilities of OpenCTI to provide a comprehensive analysis of IOCs, helping cybersecurity analysts to identify and respond to potential threats efficiently.  Features  Search for IPv4 Addresses: Quickly find all occurrences of specific IPv4 addresses in your OpenCTI instance. Search for Domain Names: Identify domain names associated with known malicious activities or suspicious behavior. Integration with OpenCTI: Seamlessly integrate with the OpenCTI API to fetch and analyze IOC data.",
+            "manifest": {
+            }
+        },
+        "access_control": {
+        },
+        "updated_at": 1748541969,
+        "created_at": 1748541884
+    }
+]
