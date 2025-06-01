@@ -3,21 +3,39 @@ title: OpenCTI IOC Analysis
 author: ReaverVision
 author_url: https://github.com/tiancu1980/OpenWebUI-Tools
 funding_url: https://github.com/open-webui
-version: 0.0.3
+version: 0.0.5
 """
 
 import re
 import requests
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 
 class Tools:
+    class Valves(BaseModel):
+        api_url: str = Field(
+            default="https://cti.essgroup.tech/graphql",
+            description="OpenCTI GraphQL API URL",
+        )
+        api_token: str = Field(
+            default="bda5aae8-4c7a-413a-933f-52ea618ca718",
+            description="OpenCTI API token",
+        )
+
+    class UserValves(BaseModel):
+        show_status: bool = Field(
+            default=True, description="Show status of the action."
+        )
+
     def __init__(self):
-        self.opencti_api_url = "https://Your_CTI_url_goes_here/graphql"
-        self.opencti_token = "Your_CTI_TOKE_GOES_HERE"
-        self.opencti_headers = {
+        self.valves = self.Valves()
+        self.user_valves = self.UserValves()
+
+    @property
+    def headers(self):
+        return {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.opencti_token}",
+            "Authorization": f"Bearer {self.valves.api_token}",
         }
 
     def analyze_ioc(
@@ -83,7 +101,7 @@ class Tools:
 
         try:
             response = requests.post(
-                self.opencti_api_url, json=payload, headers=self.opencti_headers
+                self.valves.api_url, json=payload, headers=self.headers
             )
             response.raise_for_status()
             data = response.json()
@@ -96,7 +114,10 @@ class Tools:
 
             node = edges[0]["node"]
             markings = [m.get("definition") for m in node.get("objectMarking", [])]
-            labels = [{"value": l.get("value")} for l in node.get("objectLabel", [])]
+            labels = [
+                {"value": l.get("value"), "color": l.get("color")}
+                for l in node.get("objectLabel", [])
+            ]
 
             return {
                 "id": node.get("id"),
@@ -104,7 +125,7 @@ class Tools:
                 "observable_value": node.get("observable_value"),
                 "created_at": node.get("created_at"),
                 "updated_at": node.get("updated_at"),
-                "deprecationScorePercent": node.get("x_opencti_score"),
+                "deprecation_score": node.get("x_opencti_score"),
                 "description": node.get("x_opencti_description") or "N/A",
                 "created_by": node.get("createdBy", {}).get("name", "Unknown"),
                 "markings": markings,
