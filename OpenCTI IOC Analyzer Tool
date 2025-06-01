@@ -1,0 +1,159 @@
+"""
+title: OpenCTI IOC Analysis
+author: ReaverVision
+author_url: https://github.com/tiancu1980/OpenWebUI-Tools
+funding_url: https://github.com/open-webui
+version: 0.0.5
+"""
+
+import re
+import requests
+from pydantic import BaseModel, Field
+
+
+class Tools:
+    class Valves(BaseModel):
+        api_url: str = Field(
+            default="https://test/graphql",
+            description="OpenCTI GraphQL API URL",
+        )
+        api_token: str = Field(
+            default="test",
+            description="OpenCTI API token",
+        )
+
+    class UserValves(BaseModel):
+        show_status: bool = Field(
+            default=True, description="Show status of the action."
+        )
+
+    def __init__(self):
+        self.valves = self.Valves()
+        self.user_valves = self.UserValves()
+
+    @property
+    def headers(self):
+        return {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.valves.api_token}",
+        }
+
+    def analyze_ioc(
+        self,
+        ioc: str = Field(..., description="An IP, domain, URL, or hash to analyze"),
+    ) -> dict:
+        """
+        Analyzes an IOC by determining its type and querying OpenCTI accordingly.
+        """
+        ioc_type, search_key = self._detect_ioc_type(ioc)
+
+        if not ioc_type:
+            return {"error": f"Unsupported IOC type for input: {ioc}"}
+
+        if ioc_type == "StixFile":
+            hash_type = search_key  # MD5, SHA-1, SHA-256
+            filters = f"""
+            filters: {{
+              mode: and,
+              filters: [
+                {{ key: "hashes.{hash_type}", values: [$value], operator: eq, mode: or }},
+                {{ key: "entity_type", values: ["StixFile"], operator: eq, mode: or }}
+              ],
+              filterGroups: []
+            }}
+            """
+        else:
+            filters = f"""
+            filters: {{
+              mode: and,
+              filters: [
+                {{ key: "value", values: [$value], operator: eq, mode: or }},
+                {{ key: "entity_type", values: ["{ioc_type}"], operator: eq, mode: or }}
+              ],
+              filterGroups: []
+            }}
+            """
+
+        query = f"""
+        query SearchIOC($value: Any!) {{
+          stixCyberObservables(
+            {filters}
+          ) {{
+            edges {{
+              node {{
+                id
+                entity_type
+                observable_value
+                created_at
+                updated_at
+                x_opencti_score
+                x_opencti_description
+                createdBy {{ name }}
+                objectMarking {{ definition }}
+                objectLabel {{ value color }}
+              }}
+            }}
+          }}
+        }}
+        """
+
+        payload = {"query": query, "variables": {"value": ioc}}
+
+        try:
+            response = requests.post(
+                self.valves.api_url, json=payload, headers=self.headers
+            )
+            response.raise_for_status()
+            data = response.json()
+            edges = (
+                data.get("data", {}).get("stixCyberObservables", {}).get("edges", [])
+            )
+
+            if not edges:
+                return {"result": f"No observables found for {ioc}"}
+
+            node = edges[0]["node"]
+            markings = [m.get("definition") for m in node.get("objectMarking", [])]
+            labels = [{"value": l.get("value")} for l in node.get("objectLabel", [])]
+
+            return {
+                "id": node.get("id"),
+                "entity_type": node.get("entity_type"),
+                "observable_value": node.get("observable_value"),
+                "created_at": node.get("created_at"),
+                "updated_at": node.get("updated_at"),
+                "deprecation_score": node.get("x_opencti_score"),
+                "description": node.get("x_opencti_description") or "N/A",
+                "created_by": node.get("createdBy", {}).get("name", "Unknown"),
+                "markings": markings,
+                "labels": labels,
+            }
+
+        except requests.exceptions.RequestException as e:
+            return {"error": f"OpenCTI request failed: {e}"}
+
+    def _detect_ioc_type(self, ioc: str) -> tuple[str | None, str | None]:
+        """
+        Returns a tuple of (OpenCTI entity_type, hash field or 'value')
+        """
+        # IP
+        if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", ioc):
+            return "IPv4-Addr", "value"
+
+        # Domain
+        if re.match(r"^(?!\-)([A-Za-z0-9\-]{1,63}\.)+[A-Za-z]{2,}$", ioc):
+            return "Domain-Name", "value"
+
+        # URL
+        if re.match(r"^https?://", ioc):
+            return "Url", "value"
+
+        # File hashes
+        if re.fullmatch(r"[A-Fa-f0-9]{32}", ioc):
+            return "StixFile", "MD5"
+        if re.fullmatch(r"[A-Fa-f0-9]{40}", ioc):
+            return "StixFile", "SHA-1"
+        if re.fullmatch(r"[A-Fa-f0-9]{64}", ioc):
+            return "StixFile", "SHA-256"
+
+        return None, None
